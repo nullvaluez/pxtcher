@@ -30,15 +30,17 @@ namespace DotNetObfuscator
      |_|                                
             ";
             Console.WriteLine(asciiArt);
-            if (args.Length < 2)
+            Console.WriteLine("Please drag and drop the DLL file here and press enter:");
+
+            string inputDllPath = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(inputDllPath))
             {
-                Console.WriteLine("Usage: DotNetObfuscator <inputDllPath> <outputDllPath> [encryptionKey]");
+                Console.WriteLine("No DLL file provided.");
                 return;
             }
 
-            string inputDllPath = args[0];
-            string outputDllPath = args[1];
-            string encryptionKey = args.Length > 2 ? args[2] : GenerateRandomEncryptionKey(32);
+            string outputDllPath = inputDllPath.Replace(".dll", "_obfuscated.dll");
+            string encryptionKey = GenerateRandomEncryptionKey(32);
 
             try
             {
@@ -52,6 +54,9 @@ namespace DotNetObfuscator
             {
                 Console.WriteLine("Error processing assembly: " + ex.Message);
             }
+
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
         }
 
         public static string GenerateRandomEncryptionKey(int keySize)
