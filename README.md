@@ -82,7 +82,48 @@ This project is licensed under the MIT License - see the LICENSE.md file for det
 
 The output .DLL will be saved at the specified OutputDllPath. Make sure to replace the output dll with the original input dll, e.g., ObfuscationTool.dll, replace AND rename ObfuscationTool_obfuscated.dll back to the original.
 
-## Functions Description
-GenerateRandomEncryptionKey(int keyLength): Generates a random encryption key of specified length and returns it as a base64 string.
-ObfuscateAndEncryptAssembly(AssemblyDefinition assembly, string encryptionKey): Processes the provided assembly, obfuscating names and encrypting string values.
-EncryptString(string plainText, string encryptionKey): Encrypts strings using the ChaCha7539Engine from BouncyCastle.
+## Function Descriptions
+
+This section outlines key functions and their roles within the .NET Obfuscator and Encryptor application:
+
+### `ObfuscateAndEncryptAssembly(AssemblyDefinition assembly, string encryptionKey)`
+
+This function handles the main obfuscation and encryption logic. It iterates over all methods in the provided assembly and applies obfuscation techniques, such as renaming non-public methods and encrypting string literals based on the provided encryption key.
+
+### `ValidateHashAndResourceCreation(Stream stream, AssemblyDefinition assembly)`
+
+Validates the integrity of the assembly by creating and checking an MD5 hash of the assembly's data stream. It also checks the creation of embedded resources for tamper detection.
+
+### `GenerateRandomEncryptionKey(int keySize)`
+
+Generates a random encryption key of specified size using a cryptographic random number generator. This key is used for the encryption of strings within the assembly.
+
+### `EmbedHashInAssembly()`
+
+Calculates and embeds an SHA-256 hash of the assembly's contents into the assembly itself as a resource. This is part of the tamper detection feature, verifying the integrity of the assembly at runtime.
+
+### `GetEmbeddedHash()`
+
+Retrieves the embedded hash from the assembly's resources, which can be used to check if the assembly has been tampered with since its creation.
+
+### `EncryptStrings(MethodDefinition method, string encryptionKey)`
+
+Specifically targets string literals in the provided method's IL code and encrypts them using the specified encryption key and algorithm. It replaces the original strings with their encrypted versions.
+
+### `GenerateObfuscatedName()`
+
+Generates a random string name which is used to rename methods and classes during obfuscation to make reverse engineering more difficult.
+
+### `InsertDummyOperations(MethodDefinition method)`
+
+Inserts non-operative instructions (NOPs) into the method's body to confuse decompilers and obfuscate the control flow further.
+
+### `AddDynamicProxy(MethodDefinition originalMethod, AssemblyDefinition assembly, string encryptionKey)`
+
+Adds a dynamic proxy method that forwards calls to an original method. This is used to obfuscate the direct calling relationship between methods.
+
+### `SwitchEncryptionAlgorithm()`
+
+Switches the encryption algorithm used in the obfuscator dynamically between AES-256-GCM and ChaCha20 to provide an additional layer of security complexity.
+
+These functions are pivotal in ensuring the obfuscator not only protects your assemblies through encryption and obfuscation but also maintains integrity checks to deter and detect tampering.
