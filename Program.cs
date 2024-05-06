@@ -12,6 +12,11 @@ using System.Security.Cryptography;
 
 namespace DotNetObfuscator
 {
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = false)]
+    public class DoNotObfuscateAttribute : Attribute
+    {
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -25,144 +30,174 @@ namespace DotNetObfuscator
      |_|                                
             ";
             Console.WriteLine(asciiArt);
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: DotNetObfuscator <inputDllPath> <outputDllPath> [encryptionKey]");
+                return;
+            }
+
             string inputDllPath = args[0];
             string outputDllPath = args[1];
-            string encryptionKey;
-            if (args.Length == 3)
+            string encryptionKey = args.Length > 2 ? args[2] : GenerateRandomEncryptionKey(32);
+
+            try
             {
-                encryptionKey = args[2];
+                AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(inputDllPath);
+                ObfuscateAndEncryptAssembly(assembly, encryptionKey);
+                assembly.Write(outputDllPath);
+                Console.WriteLine("Obfuscation and encryption completed.");
+                Console.WriteLine("Encryption key: " + encryptionKey);
             }
-            else
+            catch (Exception ex)
             {
-                encryptionKey = GenerateRandomEncryptionKey(32); // Generate a 32-byte key
-                Console.WriteLine($"Generated random encryption key: {encryptionKey}");
+                Console.WriteLine("Error processing assembly: " + ex.Message);
             }
-            // Load the input assembly
-            AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(inputDllPath);
-            // Obfuscate and encrypt the assembly
-            ObfuscateAndEncryptAssembly(assembly, encryptionKey);
-            // Save the obfuscated and encrypted assembly
-            assembly.Write(outputDllPath);
-            Console.WriteLine("Obfuscation and encryption completed.");
         }
 
-    public static string GenerateRandomEncryptionKey(int keySize) {
-      using(var rng = new RNGCryptoServiceProvider()) {
-        byte[] key = new byte[keySize];
-        rng.GetBytes(key);
-        return Convert.ToBase64String(key); // Return the key as a base64 string
-      }
-    }
-
-    static void ObfuscateAndEncryptAssembly(AssemblyDefinition assembly, string encryptionKey) {
-      foreach(var type in assembly.MainModule.Types) {
-        var methods = type.Methods.ToList(); // Create a copy of the methods
-        foreach(var method in methods) {
-          if (method.HasBody) {
-            // Obfuscate method names and parameters
-            if (!method.IsPublic) {
-              method.Name = GenerateObfuscatedName();
+        public static string GenerateRandomEncryptionKey(int keySize)
+        {
+            try
+            {
+                byte[] key = new byte[keySize];
+                RandomNumberGenerator.Fill(key);
+                return Convert.ToBase64String(key);
             }
-            // Control flow obfuscation: Insert dummy operations
-            InsertDummyOperations(method);
-            // Encrypt strings and other literals
-            EncryptStrings(method, encryptionKey);
-            // Add Dynamic Proxies
-            AddDynamicProxy(method, assembly, encryptionKey);
-          }
+            catch (System.Security.Cryptography.CryptographicException ex)
+            {
+                Console.WriteLine("Cryptographic error: " + ex.Message);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to generate encryption key: " + ex.Message);
+                return null;
+            }
         }
-      }
-    }
 
-    static void InsertDummyOperations(MethodDefinition method) {
-      var processor = method.Body.GetILProcessor();
-      // Create a list to store the points at which to insert the NOP instructions
-      var pointsToInsert = method.Body.Instructions.ToList(); // Copy all instructions to a new list
+        static void ObfuscateAndEncryptAssembly(AssemblyDefinition assembly, string encryptionKey)
+        {
+            foreach (var type in assembly.MainModule.Types)
+            {
+                if (type.CustomAttributes.Any(attr => attr.AttributeType.Name == "DoNotObfuscateAttribute"))
+                    continue;
 
-      foreach(var instruction in pointsToInsert) {
-        // Insert NOP before each instruction in the original list
-        processor.InsertBefore(instruction, Instruction.Create(OpCodes.Nop));
-      }
-    }
-
-    static void EncryptStrings(MethodDefinition method, string encryptionKey) {
-      var instructionsCopy = method.Body.Instructions.ToList(); // Create a copy of the instructions to avoid collection modification issues
-      foreach(var instr in instructionsCopy) {
-        if (instr.OpCode == OpCodes.Ldstr) {
-          string plainText = (string) instr.Operand;
-          string encryptedText = EncryptString(plainText, encryptionKey);
-          method.Body.Instructions.First(i => i == instr).Operand = encryptedText; // Modify the original collection
+                foreach (var method in type.Methods)
+                {
+                    if (method.HasBody && !method.CustomAttributes.Any(attr => attr.AttributeType.Name == "DoNotObfuscateAttribute"))
+                    {
+                        if (!method.IsPublic)
+                        {
+                            method.Name = GenerateObfuscatedName();
+                        }
+                    }
+                }
+            }
         }
-      }
+
+        static void InsertDummyOperations(MethodDefinition method)
+        {
+            var processor = method.Body.GetILProcessor();
+            Instruction last = method.Body.Instructions.Last();
+            // Insert NOP only at safe points (e.g., before returns or after calls)
+            foreach (var instruction in method.Body.Instructions.ToList())
+            {
+                if (instruction.OpCode == OpCodes.Ret || instruction.OpCode == OpCodes.Call)
+                {
+                    processor.InsertBefore(instruction, Instruction.Create(OpCodes.Nop));
+                }
+            }
+        }
+
+        static void EncryptStrings(MethodDefinition method, string encryptionKey)
+        {
+            var instructionsCopy = method.Body.Instructions.ToList(); // Create a copy of the instructions
+            foreach (var instr in instructionsCopy)
+            {
+                if (instr.OpCode == OpCodes.Ldstr)
+                {
+                    string plainText = (string)instr.Operand;
+                    string encryptedText = EncryptString(plainText, encryptionKey);
+                    method.Body.Instructions.First(i => i == instr).Operand = encryptedText;
+                }
+            }
+        }
+
+        static void AddDynamicProxy(MethodDefinition originalMethod, AssemblyDefinition assembly, string encryptionKey)
+        {
+            if (!originalMethod.IsPublic) return; // Only add proxies to public methods to avoid issues with access levels
+
+            var proxyMethodName = "Proxy_" + GenerateObfuscatedName();
+            var proxyMethod = new MethodDefinition(proxyMethodName, Mono.Cecil.MethodAttributes.Public | Mono.Cecil.MethodAttributes.Static, originalMethod.ReturnType);
+
+            foreach (var parameter in originalMethod.Parameters)
+            {
+                proxyMethod.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
+            }
+
+            var proxyMethodBody = proxyMethod.Body;
+            var proxyMethodProcessor = proxyMethodBody.GetILProcessor();
+
+            // Forward all parameters to the original method
+            for (int i = 0; i < originalMethod.Parameters.Count; i++)
+            {
+                proxyMethodProcessor.Emit(OpCodes.Ldarg, i);
+            }
+
+            // Call the original method
+            proxyMethodProcessor.Emit(OpCodes.Call, originalMethod);
+            proxyMethodProcessor.Emit(OpCodes.Ret);
+
+            originalMethod.DeclaringType.Methods.Add(proxyMethod);
+        }
+
+        static string GenerateObfuscatedName()
+        {
+            const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            byte[] randomBytes = new byte[10];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(randomBytes);
+            }
+            return new string(randomBytes.Select(b => chars[b % chars.Length]).ToArray());
+        }
+
+        static string EncryptString(string plainText, string base64EncryptionKey)
+        {
+            byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
+            byte[] keyBytes = Convert.FromBase64String(base64EncryptionKey);
+            if (keyBytes.Length != 32)
+            {
+                throw new ArgumentException("Key must be exactly 32 bytes (256 bits) long.");
+            }
+            byte[] iv = new byte[12];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(iv);
+            }
+            ChaCha7539Engine chacha20 = new ChaCha7539Engine();
+            ParametersWithIV chachaParams = new ParametersWithIV(new KeyParameter(keyBytes), iv);
+            chacha20.Init(true, chachaParams);
+            byte[] cipherBytes = new byte[plainBytes.Length];
+            chacha20.ProcessBytes(plainBytes, 0, plainBytes.Length, cipherBytes, 0);
+            return Convert.ToBase64String(iv) + ":" + Convert.ToBase64String(cipherBytes);
+        }
+
+        public static string DecryptString(string encryptedText, string base64EncryptionKey)
+        {
+            // Split the encrypted text into the IV and the cipher text
+            string[] parts = encryptedText.Split(':');
+            byte[] iv = Convert.FromBase64String(parts[0]);
+            byte[] cipherBytes = Convert.FromBase64String(parts[1]);
+
+            byte[] keyBytes = Convert.FromBase64String(base64EncryptionKey); // Use the provided encryption key
+
+            ChaCha7539Engine chacha20 = new ChaCha7539Engine();
+            ParametersWithIV chachaParams = new ParametersWithIV(new KeyParameter(keyBytes), iv);
+            chacha20.Init(false, chachaParams); // false for decryption
+            byte[] plainBytes = new byte[cipherBytes.Length];
+            chacha20.ProcessBytes(cipherBytes, 0, cipherBytes.Length, plainBytes, 0);
+
+            return Encoding.UTF8.GetString(plainBytes);
+        }
     }
-
-    static void AddDynamicProxy(MethodDefinition originalMethod, AssemblyDefinition assembly, string encryptionKey) {
-      var proxyMethodName = "Proxy_" + GenerateObfuscatedName();
-      var proxyMethod = new MethodDefinition(proxyMethodName, Mono.Cecil.MethodAttributes.Public | Mono.Cecil.MethodAttributes.Static, originalMethod.ReturnType);
-      var proxyMethodBody = proxyMethod.Body;
-      var proxyMethodProcessor = proxyMethodBody.GetILProcessor();
-
-      // Add a call instruction to the original method
-      proxyMethodProcessor.Emit(OpCodes.Call, originalMethod);
-
-      // Add the proxy method to the original method's type
-      originalMethod.DeclaringType.Methods.Add(proxyMethod);
-    }
-
-    static void EncryptMethodCall(ILProcessor processor, MethodDefinition method, string encryptionKey) {
-      // logic to encrypt the method call
-      var encryptedMethodName = EncryptString(method.Name, encryptionKey);
-      var encryptedMethod = method.DeclaringType.Methods.FirstOrDefault(m => m.Name == encryptedMethodName);
-
-      if (encryptedMethod != null) {
-        processor.Emit(OpCodes.Call, encryptedMethod);
-      } else {
-        // If the encrypted method name doesn't exist, just call the original method
-        processor.Emit(OpCodes.Call, method);
-      }
-    }
-    static string GenerateObfuscatedName() {
-      const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-      byte[] randomBytes = new byte[10];
-      using(var rng = RandomNumberGenerator.Create()) {
-        rng.GetBytes(randomBytes);
-      }
-      return new string(randomBytes.Select(b => chars[b % chars.Length]).ToArray());
-    }
-
-    static string EncryptString(string plainText, string base64EncryptionKey) {
-      byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-      byte[] keyBytes = Convert.FromBase64String(base64EncryptionKey); // Ensure this is exactly 32 bytes
-      if (keyBytes.Length != 32) {
-        throw new ArgumentException("Key must be exactly 32 bytes (256 bits) long.");
-      }
-      byte[] iv = new byte[12]; // ChaCha20 uses a 12-byte IV
-      using(var rng = RandomNumberGenerator.Create()) {
-        rng.GetBytes(iv);
-      }
-      ChaCha7539Engine chacha20 = new ChaCha7539Engine();
-      ParametersWithIV chachaParams = new ParametersWithIV(new KeyParameter(keyBytes), iv);
-      chacha20.Init(true, chachaParams);
-      byte[] cipherBytes = new byte[plainBytes.Length];
-      chacha20.ProcessBytes(plainBytes, 0, plainBytes.Length, cipherBytes, 0);
-      return Convert.ToBase64String(iv) + ":" + Convert.ToBase64String(cipherBytes);
-    }
-
-    public static string DecryptString(string encryptedText, string base64EncryptionKey) {
-      // Split the encrypted text into the IV and the cipher text
-      string[] parts = encryptedText.Split(':');
-      byte[] iv = Convert.FromBase64String(parts[0]);
-      byte[] cipherBytes = Convert.FromBase64String(parts[1]);
-
-      byte[] keyBytes = Convert.FromBase64String(base64EncryptionKey); // Use the provided encryption key
-
-      ChaCha7539Engine chacha20 = new ChaCha7539Engine();
-      ParametersWithIV chachaParams = new ParametersWithIV(new KeyParameter(keyBytes), iv);
-      chacha20.Init(false, chachaParams); // false for decryption
-      byte[] plainBytes = new byte[cipherBytes.Length];
-      chacha20.ProcessBytes(cipherBytes, 0, cipherBytes.Length, plainBytes, 0);
-
-      return Encoding.UTF8.GetString(plainBytes);
-    }
-  }
 }
