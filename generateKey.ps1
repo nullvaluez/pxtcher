@@ -1,0 +1,1 @@
+New-SelfSignedCertificate -Type DocumentEncryptionCert -KeyExportPolicy Exportable -Subject "CN=MyKey" -CertStoreLocation "Cert:\CurrentUser\My" -KeyLength 2048 -KeySpec KeyExchange -NotAfter (Get-Date).AddYears(5) | Export-PfxCertificate -FilePath .\myKey.pfx -Password (ConvertTo-SecureString -String "test123" -Force -AsPlainText)
