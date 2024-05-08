@@ -9,6 +9,8 @@ using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Parameters;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace DotNetObfuscator
 {
@@ -19,15 +21,51 @@ namespace DotNetObfuscator
 
     class Program
     {
+        static EncryptionAlgorithm currentAlgorithm = EncryptionAlgorithm.AES256GCM;
+
         static void Main(string[] args)
         {
+            // tamper detection
+            using (var md5 = MD5.Create())
+            {
+                using (var stream = File.OpenRead(Assembly.GetExecutingAssembly().Location))
+                {
+                    AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(Assembly.GetExecutingAssembly().Location);
+                    if (!ValidateHashAndResourceCreation(stream, assembly))
+                    {
+                        Console.WriteLine("Validation failed.");
+                        return;
+                    }
+                    
+                    var hash = md5.ComputeHash(stream);
+                    var hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    // Add the hash as a resource
+                    var resource = new EmbeddedResource("MD5Hash", Mono.Cecil.ManifestResourceAttributes.Private, Encoding.UTF8.GetBytes(hashString));
+                    string modifiedFilePath = "C:/Users/ByronFecho/ObfuscationTool/bin/Debug/net8.0/ObfuscationTool.dll.modified"; // Replace "path/to/modified/file.dll" with the actual file path
+                    assembly.Write(modifiedFilePath);
+                    EmbedHashInAssembly();
+                    GetEmbeddedHash(); // This will trigger the tamper detection
+                    SwitchEncryptionAlgorithm(); // Switch the encryption algorithm
+                    Console.WriteLine("MD5 hash: " + hashString);
+                    Console.WriteLine("Tamper detection added.");
+                    Console.WriteLine($"Switched encryption to {currentAlgorithm}");
+
+                    // Delete the intermediate file
+                    File.Delete(modifiedFilePath);
+                }
+                
+            }
+
             string asciiArt = @"
                 _       _               
       _ ____  _| |_ ___| |__   ___ _ __ 
      | '_ \ \/ / __/ __| '_ \ / _ \ '__|
      | |_) >  <| || (__| | | |  __/ |   
      | .__/_/\_\\__\___|_| |_|\___|_|   
-     |_|                                
+     |_|
+
+     .NET Obfuscator and Encryptor by @nullvaluez
+                                
             ";
             Console.WriteLine(asciiArt);
             Console.WriteLine("Please drag and drop the DLL file here and press enter:");
@@ -59,6 +97,62 @@ namespace DotNetObfuscator
             Console.ReadKey();
         }
 
+        static void EmbedHashInAssembly()
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                using (var stream = File.OpenRead(Assembly.GetExecutingAssembly().Location))
+                {
+                    var hash = sha256.ComputeHash(stream);
+                    var hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(Assembly.GetExecutingAssembly().Location);
+                    var resource = new EmbeddedResource("SHA256Hash", Mono.Cecil.ManifestResourceAttributes.Private, hash);
+                    assembly.MainModule.Resources.Add(resource);
+                    assembly.Write(Assembly.GetExecutingAssembly().Location + ".modified");
+                    Console.WriteLine("SHA256 hash: " + hashString);
+                }
+            }
+        }
+
+        static byte[] GetEmbeddedHash()
+        {
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            var resourceName = "MD5 hash";
+            using (Stream resourceStream = assembly.GetManifestResourceStream(resourceName))
+            {
+                if (resourceStream == null) return null;
+                byte[] hash = new byte[resourceStream.Length];
+                resourceStream.Read(hash, 0, hash.Length);
+                return hash;
+            }
+        }
+        static bool ValidateHashAndResourceCreation(Stream stream, AssemblyDefinition assembly)
+{
+        using (var md5 = MD5.Create())
+        {
+            var hash = md5.ComputeHash(stream);
+            var hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+
+            // Validate the hash
+            if (string.IsNullOrEmpty(hashString))
+            {
+                Console.WriteLine("Failed to compute MD5 hash.");
+                return false;
+            }
+
+            // Validate the creation of the EmbeddedResource
+            var resource = new EmbeddedResource("MD5Hash", Mono.Cecil.ManifestResourceAttributes.Private, Encoding.UTF8.GetBytes(hashString));
+            if (resource == null)
+            {
+                Console.WriteLine("Failed to create EmbeddedResource.");
+             return false;
+            }
+
+            assembly.MainModule.Resources.Add(resource);
+        }
+
+        return true;
+    }
         public static string GenerateRandomEncryptionKey(int keySize)
         {
             try
@@ -94,23 +188,38 @@ namespace DotNetObfuscator
                         {
                             method.Name = GenerateObfuscatedName();
                         }
+
+                        InsertControlFlowObfuscation(method);
+                        AddAntiTamperCheck(method); // Add anti-tamper check
                     }
                 }
             }
         }
 
-        static void InsertDummyOperations(MethodDefinition method)
+        static void InsertControlFlowObfuscation(MethodDefinition method)
         {
             var processor = method.Body.GetILProcessor();
-            Instruction last = method.Body.Instructions.Last();
-            // Insert NOP only at safe points (e.g., before returns or after calls)
-            foreach (var instruction in method.Body.Instructions.ToList())
+            var instructions = method.Body.Instructions.ToList();
+            if (instructions.Count < 1)
             {
-                if (instruction.OpCode == OpCodes.Ret || instruction.OpCode == OpCodes.Call)
+                for (int i = 0; i < instructions.Count; i++)
                 {
-                    processor.InsertBefore(instruction, Instruction.Create(OpCodes.Nop));
+                    if (instructions[i].OpCode == OpCodes.Br)
+                    {
+                        
+                        processor.InsertBefore(instructions[i], Instruction.Create(OpCodes.Br_S, instructions[i]));
+                        processor.InsertBefore(instructions[i], Instruction.Create(OpCodes.Nop));
+                    }
                 }
-            }
+            } 
+        }
+
+
+        public enum EncryptionAlgorithm
+        {
+            AES256GCM,
+            AES,
+            ChaCha20
         }
 
         static void EncryptStrings(MethodDefinition method, string encryptionKey)
@@ -121,10 +230,15 @@ namespace DotNetObfuscator
                 if (instr.OpCode == OpCodes.Ldstr)
                 {
                     string plainText = (string)instr.Operand;
-                    string encryptedText = EncryptString(plainText, encryptionKey);
+                    string encryptedText = EncryptString(plainText, encryptionKey, currentAlgorithm); // Use the current algorithm
                     method.Body.Instructions.First(i => i == instr).Operand = encryptedText;
                 }
             }
+        }
+
+        private static string EncryptString(string plainText, string encryptionKey, EncryptionAlgorithm currentAlgorithm)
+        {
+            throw new NotImplementedException();
         }
 
         static void AddDynamicProxy(MethodDefinition originalMethod, AssemblyDefinition assembly, string encryptionKey)
@@ -155,6 +269,17 @@ namespace DotNetObfuscator
             originalMethod.DeclaringType.Methods.Add(proxyMethod);
         }
 
+        static void SwitchEncryptionAlgorithm()
+        {
+            System.Timers.Timer timer = new System.Timers.Timer(10000); // Set the interval to 10 seconds
+            timer.Elapsed += (sender, e) => 
+            {
+                Random rng = new Random();
+                currentAlgorithm = rng.Next(2) == 0 ? EncryptionAlgorithm.ChaCha20 : EncryptionAlgorithm.AES256GCM;
+            };
+            timer.Start();
+        }
+
         static string GenerateObfuscatedName()
         {
             const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -166,24 +291,50 @@ namespace DotNetObfuscator
             return new string(randomBytes.Select(b => chars[b % chars.Length]).ToArray());
         }
 
+        static void AddAntiTamperCheck(MethodDefinition method)
+        {
+            var processor = method.Body.GetILProcessor();
+            var instructions = method.Body.Instructions.ToList();
+            if (instructions.Count < 1)
+            {
+                for (int i = 0; i < instructions.Count; i++)
+                {
+                    if (instructions[i].OpCode == OpCodes.Br)
+                    {
+                        
+                        processor.InsertBefore(instructions[i], Instruction.Create(OpCodes.Br_S, instructions[i]));
+                        processor.InsertBefore(instructions[i], Instruction.Create(OpCodes.Nop));
+                    }
+                }
+            } 
+        }
+
         static string EncryptString(string plainText, string base64EncryptionKey)
         {
+            // Encryption logic adjusted to handle polymorphic switching
             byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
             byte[] keyBytes = Convert.FromBase64String(base64EncryptionKey);
-            if (keyBytes.Length != 32)
-            {
-                throw new ArgumentException("Key must be exactly 32 bytes (256 bits) long.");
-            }
             byte[] iv = new byte[12];
-            using (var rng = RandomNumberGenerator.Create())
-            {
-                rng.GetBytes(iv);
-            }
-            ChaCha7539Engine chacha20 = new ChaCha7539Engine();
-            ParametersWithIV chachaParams = new ParametersWithIV(new KeyParameter(keyBytes), iv);
-            chacha20.Init(true, chachaParams);
+            new Random().NextBytes(iv);
             byte[] cipherBytes = new byte[plainBytes.Length];
-            chacha20.ProcessBytes(plainBytes, 0, plainBytes.Length, cipherBytes, 0);
+
+            Console.WriteLine($"Encrypting using {currentAlgorithm}");
+            switch (currentAlgorithm)
+            {
+                case EncryptionAlgorithm.ChaCha20:
+                    ChaCha7539Engine chacha20 = new ChaCha7539Engine();
+                    ParametersWithIV chachaParams = new ParametersWithIV(new KeyParameter(keyBytes), iv);
+                    chacha20.Init(true, chachaParams);
+                    chacha20.ProcessBytes(plainBytes, 0, plainBytes.Length, cipherBytes, 0);
+                    break;
+                case EncryptionAlgorithm.AES256GCM:
+                    using (var aes = new AesGcm(keyBytes))
+                    {
+                        aes.Encrypt(iv, plainBytes, cipherBytes, null);
+                    }
+                    break;
+            }
+
             return Convert.ToBase64String(iv) + ":" + Convert.ToBase64String(cipherBytes);
         }
 
@@ -206,3 +357,4 @@ namespace DotNetObfuscator
         }
     }
 }
+
