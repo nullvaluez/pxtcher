@@ -83,8 +83,11 @@ namespace DotNetObfuscator
             try
             {
                 AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(inputDllPath);
+                var resourceData = Encoding.UTF8.GetBytes("This is a test resource.");
+                AddEncryptedResource(assembly, "EncryptedResource", resourceData);
                 ObfuscateAndEncryptAssembly(assembly, encryptionKey);
                 assembly.Write(outputDllPath);
+                LoadAssemblyReflectively(outputDllPath);
                 Console.WriteLine("Obfuscation and encryption completed.");
                 Console.WriteLine("Encryption key: " + encryptionKey);
             }
@@ -190,7 +193,8 @@ namespace DotNetObfuscator
                         }
 
                         InsertControlFlowObfuscation(method);
-                        AddAntiTamperCheck(method); // Add anti-tamper check
+                        InsertOpaquePredicates(method);
+                        AddAntiTamperCheck(method);
                     }
                 }
             }
@@ -214,7 +218,12 @@ namespace DotNetObfuscator
             } 
         }
 
-
+    static void LoadAssemblyReflectively(string assemblyPath)
+    {
+        byte[] assemblyData = File.ReadAllBytes(assemblyPath);
+        Assembly loadedAssembly = Assembly.Load(assemblyData);
+        Console.WriteLine($"Loaded {loadedAssembly.FullName} reflectively.");
+    }
         public enum EncryptionAlgorithm
         {
             AES256GCM,
@@ -222,17 +231,15 @@ namespace DotNetObfuscator
             ChaCha20
         }
 
-        static void EncryptStrings(MethodDefinition method, string encryptionKey)
+        static void EncryptStrings(MethodDefinition method)
         {
-            var instructionsCopy = method.Body.Instructions.ToList(); // Create a copy of the instructions
-            foreach (var instr in instructionsCopy)
+            var instructions = method.Body.Instructions.Where(instr => instr.OpCode == OpCodes.Ldstr).ToList();
+            foreach (var instr in instructions)
             {
-                if (instr.OpCode == OpCodes.Ldstr)
-                {
-                    string plainText = (string)instr.Operand;
-                    string encryptedText = EncryptString(plainText, encryptionKey, currentAlgorithm); // Use the current algorithm
-                    method.Body.Instructions.First(i => i == instr).Operand = encryptedText;
-                }
+                string plainText = (string)instr.Operand;
+                var key = GenerateRandomEncryptionKey(32);
+                string encryptedText = EncryptString(plainText, key); // Encrypt using a new key each time
+                instr.Operand = encryptedText;
             }
         }
 
@@ -276,6 +283,7 @@ namespace DotNetObfuscator
             {
                 Random rng = new Random();
                 currentAlgorithm = rng.Next(2) == 0 ? EncryptionAlgorithm.ChaCha20 : EncryptionAlgorithm.AES256GCM;
+                Console.WriteLine($"Switched to {currentAlgorithm}");
             };
             timer.Start();
         }
@@ -308,6 +316,53 @@ namespace DotNetObfuscator
                 }
             } 
         }
+
+        static void AddEncryptedResource(AssemblyDefinition assembly, string resourceName, byte[] data)
+        {
+            var encryptionKey = GenerateRandomEncryptionKey(32);
+            var encryptedData = EncryptData(data, Convert.FromBase64String(encryptionKey));
+            var encryptedResource = new EmbeddedResource(resourceName, Mono.Cecil.ManifestResourceAttributes.Private, encryptedData);
+            assembly.MainModule.Resources.Add(encryptedResource);
+            Console.WriteLine($"Resource {resourceName} encrypted and added.");
+        }
+
+        static byte[] EncryptData(byte[] data, byte[] key)
+{
+            // Using AES for simplicity here
+            using (Aes aesAlg = Aes.Create())
+            {
+                aesAlg.Key = key;
+                aesAlg.GenerateIV();
+                aesAlg.Mode = CipherMode.CBC;
+
+                using (var encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV))
+                {
+                using (var msEncrypt = new MemoryStream())
+                {
+                    using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
+                    {
+                        csEncrypt.Write(data, 0, data.Length);
+                    }
+                    // Prepend IV to the data
+                    return aesAlg.IV.Concat(msEncrypt.ToArray()).ToArray();
+                }
+            }
+        }
+    }
+
+        static void InsertOpaquePredicates(MethodDefinition method)
+        {
+            var processor = method.Body.GetILProcessor();
+            var firstInstruction = method.Body.Instructions.First();
+
+            var trueInstruction = Instruction.Create(OpCodes.Ldc_I4_1);
+            var branchInstruction = Instruction.Create(OpCodes.Brtrue, firstInstruction);
+
+
+            // Example of an opaque predicate
+            processor.InsertBefore(firstInstruction, trueInstruction);
+            processor.InsertBefore(firstInstruction, branchInstruction);
+        } 
 
         static string EncryptString(string plainText, string base64EncryptionKey)
         {
