@@ -25,6 +25,8 @@ namespace DotNetObfuscator
 
         static void Main(string[] args)
         {
+            Thread detectProcessThread = new Thread(new ThreadStart(DetectProcess));
+            detectProcessThread.Start();
             // tamper detection
             using (var md5 = MD5.Create())
             {
@@ -363,6 +365,27 @@ namespace DotNetObfuscator
             processor.InsertBefore(firstInstruction, trueInstruction);
             processor.InsertBefore(firstInstruction, branchInstruction);
         } 
+
+        // detect if certain .exe files are running
+        static void DetectProcess()
+        {
+            while (true)
+            {
+                string[] processNames = { "ida", "ollydbg", "x64dbg", "windbg", "dbg", "cheat", "hack", "injector", "de4dot", "dnspy", "de4dot-x64", "ilspy", "dotpeek" };
+
+                foreach (var processName in processNames)
+                {
+
+                    Process[] processes = Process.GetProcessesByName(processName);
+                    if (processes.Length > 0)
+                    {
+                        Console.WriteLine($"Detected process: {processName}");
+                        Environment.Exit(0);
+                    }
+                }
+                 Thread.Sleep(5000);
+            }
+        }
 
         static string EncryptString(string plainText, string base64EncryptionKey)
         {
