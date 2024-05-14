@@ -12,6 +12,8 @@ using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Parameters;
 using System.Timers;
+using System.Runtime.InteropServices;
+using System.Management;
 
 namespace DotNetObfuscator
 {
@@ -256,7 +258,7 @@ namespace DotNetObfuscator
                         InsertControlFlowObfuscation(method);
                         InsertOpaquePredicates(method);
                         AddAntiTamperCheck(method);
-                        //EncryptStrings(method);
+                        EncryptStrings(type);
                     }
                 }
             }
@@ -368,7 +370,7 @@ namespace DotNetObfuscator
         {
             while (true)
             {
-                string[] processNames = ["ida", "ollydbg", "x64dbg", "windbg", "dbg", "cheat", "hack", "injector", "de4dot", "dnspy", "de4dot-x64", "ilspy", "dotpeek", "dotpeek64"];
+                string[] processNames = { "ida", "ollydbg", "x64dbg", "windbg", "dbg", "cheat", "hack", "injector", "de4dot", "dnspy", "de4dot-x64", "ilspy", "dotpeek", "dotpeek64" };
 
                 foreach (var processName in processNames)
                 {
@@ -376,23 +378,39 @@ namespace DotNetObfuscator
                     {
                         Console.WriteLine($"Detected process: {processName}");
                         Environment.Exit(0);
-                    }
+                    } 
                 }
                 Thread.Sleep(5000);
             }
         }
 
-        static void EncryptStrings(MethodDefinition method)
+        public static void EncryptStrings(TypeDefinition type)
         {
-            var instructions = method.Body.Instructions.Where(instr => instr.OpCode == OpCodes.Ldstr).ToList();
-            foreach (var instr in instructions)
+            foreach (var field in type.Fields)
             {
-                string plainText = (string)instr.Operand;
+            if (field.IsPublic && field.FieldType.FullName == "System.String")
+            {
+                string plainText = (string)field.Constant;
                 var key = GenerateRandomEncryptionKey(32) ?? string.Empty;
                 string encryptedText = EncryptString(plainText, key);
-                instr.Operand = encryptedText;
+                field.Constant = encryptedText;
             }
         }
+
+        foreach (var property in type.Properties)
+        {
+            if (property.GetMethod.IsPublic && property.PropertyType.FullName == "System.String")
+            {
+                // This assumes that the property has a backing field
+                string plainText = (string)property.GetMethod.Body.Instructions
+                    .First(instr => instr.OpCode == OpCodes.Ldstr).Operand;
+                var key = GenerateRandomEncryptionKey(32) ?? string.Empty;
+                string encryptedText = EncryptString(plainText, key);
+                property.GetMethod.Body.Instructions
+                    .First(instr => instr.OpCode == OpCodes.Ldstr).Operand = encryptedText;
+            }
+        }
+    }
 
         static string EncryptString(string plainText, string base64EncryptionKey)
         {
@@ -457,6 +475,57 @@ namespace DotNetObfuscator
             AES256GCM,
             AES,
             ChaCha20
+        }
+
+        // Anti-Debugging Techniques
+        [DllImport("kernel32.dll")]
+        private static extern bool IsDebuggerPresent();
+
+        private static void AntiDebugging()
+        {
+            if (IsDebuggerPresent())
+            {
+                Console.WriteLine("Debugger detected!");
+                Environment.Exit(0);
+            }
+
+            while (true)
+            {
+                if (Debugger.IsAttached)
+                {
+                    Console.WriteLine("Debugger attached!");
+                    Environment.Exit(0);
+                }
+                Thread.Sleep(1000);
+            }
+        }
+
+        // Environment Checks
+        private static void EnvironmentChecks()
+        {
+            if (IsRunningInVirtualMachine())
+            {
+                Console.WriteLine("Running in a virtual machine!");
+                Environment.Exit(0);
+            }
+        }
+
+        private static bool IsRunningInVirtualMachine()
+        {
+            using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_ComputerSystem"))
+            {
+                foreach (var item in searcher.Get())
+                {
+                    string manufacturer = item["Manufacturer"].ToString().ToLower();
+                    if ((manufacturer == "microsoft corporation" && item["Model"].ToString().ToUpperInvariant().Contains("VIRTUAL"))
+                        || manufacturer.Contains("vmware")
+                        || item["Model"].ToString() == "VirtualBox")
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
     }
 }
