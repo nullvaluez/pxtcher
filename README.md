@@ -1,129 +1,183 @@
 # pxtcher - .NET Obfuscator and Patcher
 pxtcher is a tool designed to obfuscate and encrypt .NET assemblies to protect against reverse engineering and unauthorized tampering. The tool uses Mono.Cecil for assembly manipulation, BouncyCastle for encryption, and provides an option to generate a random encryption key if one is not provided. 
 
+## Overview
+
+This project is a .NET assembly obfuscator and encryptor designed to enhance the security of your .NET applications by protecting them from reverse engineering and tampering. It includes a launcher script (`launcher.py`) that wraps the executable using PyArmor.
+
 ## Features
 
-- **Obfuscation**: Reduces the readability of the .NET assembly for anyone trying to reverse-engineer your code.
-- **Encryption**: Secures string literals and other sensitive information within the assembly.
-- **Tamper Detection**: Adds an MD5 hash to the assembly as a resource to detect tampering of the assembly after it's been built.
-- **Attribute-based Exclusion**: Use the `DoNotObfuscate` attribute to exclude specific classes or methods from obfuscation.
-- **Dynamic Encryption Algorithm Switching**: Allows switching between AES-256-GCM and ChaCha20 encryption algorithms.
+- Obfuscates .NET assemblies
+- Encrypts .NET assemblies
+- Control flow obfuscation
+- String encryption
+- Anti-tamper and anti-debugging mechanisms
+- Environment checks (e.g., running in a virtual machine)
+- Easy to use CLI
+- Includes a launcher script to wrap the executable
 
 ## Getting Started
 
 ### Prerequisites
 
-- .NET Framework 4.7.2 or higher
-- Visual Studio 2017 or later
-- Mono.Cecil package
-- BouncyCastle package
-- 
-## Installation
-
-Before running the .NET Obfuscator, ensure that you have cloned the repository and built the project with all dependencies correctly configured.
-
-## Usage
-
-The program takes up to three command-line arguments:
-
-1. **InputDllPath**: The path to the input .DLL file you want to obfuscate.
-2. **OutputDllPath**: The path where the obfuscated and encrypted .DLL will be saved.
-3. **EncryptionKey** (optional): A base64 string used as the encryption key. If not provided, a random 32-byte key will be generated.
+- Python 3.x
+- .NET SDK
+- PyArmor (`pip install pyarmor`)
+- PyInstaller (`pip install pyinstaller`)
+- Mono.Cecil library for .NET (`Install-Package Mono.Cecil`)
+- BouncyCastle library for .NET (`Install-Package BouncyCastle`)
 
 ### Installation
 
-Clone the repository to your local machine using:
+1. **Clone the repository:**
 
-```bash
-git clone https://github.com/yourusername/dotnet-obfuscator.git
-```
-Navigate to the project directory:
+    ```bash
+    git clone https://github.com/yourusername/your-repo-name.git
+    cd your-repo-name
+    ```
 
-```bash
-cd dotnet-obfuscator
-```
-Build the project using Visual Studio or via the command line:
+2. **Install Python dependencies:**
 
-```bash
-msbuild /p:Configuration=Release
-```
-### Usage
+    ```bash
+    pip install pyarmor pyinstaller
+    ```
 
-Run the program via command line from the build directory:
-```bash
-DotNetObfuscator.exe
-```
-Follow the on-screen instructions to input the path to the DLL you wish to obfuscate and encrypt.
+3. **Install .NET dependencies:**
 
-### Example with a provided EncryptionKey:
-```bash
-DotNetObfuscator.exe "C:\path\to\your\assembly.dll" "C:\path\to\save\obfuscated.dll" "YourBase64KeyHere"
-```
+    ```bash
+    dotnet add package Mono.Cecil
+    dotnet add package BouncyCastle
+    ```
 
-## Example
-Snippet from the main functionality:
-```csharp
-if (!ValidateHashAndResourceCreation(stream, assembly))
-{
-    Console.WriteLine("Validation failed.");
-    return;
-}
+4. **Build the .NET project:**
 
-ObfuscateAndEncryptAssembly(assembly, encryptionKey);
-assembly.Write(outputDllPath);
-Console.WriteLine("Obfuscation and encryption completed.");
-```
-## Contributing
-Contributions are welcome! Please feel free to submit pull requests, create issues for bugs and feature requests, and contribute to improving the documentation.
+    ```bash
+    dotnet build -c Release
+    ```
 
-## License
+## Usage
 
-This project is licensed under the MIT License - see the LICENSE.md file for details.
+1. **Obfuscate and encrypt your .NET assemblies:**
 
-The output .DLL will be saved at the specified OutputDllPath. Make sure to replace the output dll with the original input dll, e.g., ObfuscationTool.dll, replace AND rename ObfuscationTool_obfuscated.dll back to the original.
+    ```bash
+    dotnet run --project YourProjectPath
+    ```
+
+2. **Wrap the executable using the launcher script:**
+
+    Ensure `launcher.py` is in the root directory, then run:
+
+    ```bash
+    pyarmor gen --output dist launcher.py
+    pyinstaller --onefile dist/launcher.py
+    ```
+
+    Use the generated executable to wrap your .NET executable:
+
+    ```bash
+    dist/launcher path/to/your/executable.exe
+    ```
+
+## Examples
+
+### Obfuscating a .NET Assembly
+
+1. **Run the tool:**
+
+    ```bash
+    dotnet run --project YourProjectPath
+    ```
+
+2. **Provide the DLL file:**
+
+    Drag and drop the DLL file into the console and press enter.
+
+3. **Check the output:**
+
+    The obfuscated and encrypted DLL will be saved in the same directory with `_obfuscated` appended to the filename.
+
+### Wrapping the Executable with PyArmor
+
+1. **Generate the PyArmor wrapper:**
+
+    ```bash
+    pyarmor gen --output dist launcher.py
+    ```
+
+2. **Create a standalone executable:**
+
+    ```bash
+    pyinstaller --onefile dist/launcher.py
+    ```
+
+3. **Use the wrapped executable:**
+
+    ```bash
+    dist/launcher path/to/your/executable.exe
+    ```
 
 ## Function Descriptions
 
-This section outlines key functions and their roles within the .NET Obfuscator and Encryptor application:
+- **EnsureSingleInstance**: Ensures that only one instance of the application is running.
+- **StartProcessDetection**: Starts a background thread to detect unauthorized processes.
+- **PerformTamperDetection**: Validates the assembly's integrity and adds anti-tamper mechanisms.
+- **DisplayWelcomeMessage**: Displays an ASCII art welcome message.
+- **GenerateSafeOutputPath**: Generates a safe output path for the obfuscated DLL.
+- **ProcessAssembly**: Obfuscates and encrypts the assembly.
+- **EmbedHashInAssembly**: Embeds a hash in the assembly for tamper detection.
+- **GetEmbeddedHash**: Retrieves the embedded hash from the assembly.
+- **ValidateHashAndResourceCreation**: Validates the hash and resource creation in the assembly.
+- **GenerateRandomEncryptionKey**: Generates a random encryption key.
+- **ObfuscateAndEncryptAssembly**: Applies obfuscation and encryption to the assembly.
+- **InsertControlFlowObfuscation**: Inserts control flow obfuscation into the methods.
+- **InsertOpaquePredicates**: Inserts opaque predicates into the methods.
+- **AddAntiTamperCheck**: Adds anti-tamper checks to the methods.
+- **AddEncryptedResource**: Adds an encrypted resource to the assembly.
+- **EncryptData**: Encrypts data using the specified key.
+- **LoadAssemblyReflectively**: Loads the assembly reflectively.
+- **SwitchEncryptionAlgorithm**: Switches the encryption algorithm periodically.
+- **GenerateObfuscatedName**: Generates a random obfuscated name.
+- **DetectProcess**: Detects unauthorized processes and terminates the application.
+- **EncryptStrings**: Encrypts string fields and properties in the assembly.
+- **EncryptString**: Encrypts a string using the specified encryption key.
+- **DecryptString**: Decrypts a string using the specified encryption key.
+- **AntiDebugging**: Detects if a debugger is attached and terminates the application.
+- **EnvironmentChecks**: Checks if the application is running in a virtual machine.
 
-### `ObfuscateAndEncryptAssembly(AssemblyDefinition assembly, string encryptionKey)`
+## PyArmor
 
-This function handles the main obfuscation and encryption logic. It iterates over all methods in the provided assembly and applies obfuscation techniques, such as renaming non-public methods and encrypting string literals based on the provided encryption key.
+The `launcher.py` script is designed to wrap your .NET executable with PyArmor, providing an additional layer of security. Here's how to use it:
 
-### `ValidateHashAndResourceCreation(Stream stream, AssemblyDefinition assembly)`
+1. **Ensure `launcher.py` is in the root directory.**
+2. **Generate the PyArmor wrapper:**
 
-Validates the integrity of the assembly by creating and checking an MD5 hash of the assembly's data stream. It also checks the creation of embedded resources for tamper detection.
+    ```bash
+    pyarmor gen --output dist launcher.py
+    ```
 
-### `GenerateRandomEncryptionKey(int keySize)`
+3. **Create a standalone executable:**
 
-Generates a random encryption key of specified size using a cryptographic random number generator. This key is used for the encryption of strings within the assembly.
+    ```bash
+    pyinstaller --onefile dist/launcher.py
+    ```
 
-### `EmbedHashInAssembly()`
+4. **Use the wrapped executable:**
 
-Calculates and embeds an SHA-256 hash of the assembly's contents into the assembly itself as a resource. This is part of the tamper detection feature, verifying the integrity of the assembly at runtime.
+    ```bash
+    dist/launcher path/to/your/executable.exe
+    ```
 
-### `GetEmbeddedHash()`
+This will protect your .NET executable with PyArmor, adding an additional layer of security to your application.
 
-Retrieves the embedded hash from the assembly's resources, which can be used to check if the assembly has been tampered with since its creation.
+## Contributing
 
-### `EncryptStrings(MethodDefinition method, string encryptionKey)`
+We welcome contributions! Please open an issue or submit a pull request.
 
-Specifically targets string literals in the provided method's IL code and encrypts them using the specified encryption key and algorithm. It replaces the original strings with their encrypted versions.
+## License
 
-### `GenerateObfuscatedName()`
+This project is licensed under the MIT License.
 
-Generates a random string name which is used to rename methods and classes during obfuscation to make reverse engineering more difficult.
+## Contact
 
-### `InsertDummyOperations(MethodDefinition method)`
+For any questions or concerns, please open an issue or contact the repository owner.
 
-Inserts non-operative instructions (NOPs) into the method's body to confuse decompilers and obfuscate the control flow further.
-
-### `AddDynamicProxy(MethodDefinition originalMethod, AssemblyDefinition assembly, string encryptionKey)`
-
-Adds a dynamic proxy method that forwards calls to an original method. This is used to obfuscate the direct calling relationship between methods.
-
-### `SwitchEncryptionAlgorithm()`
-
-Switches the encryption algorithm used in the obfuscator dynamically between AES-256-GCM and ChaCha20 to provide an additional layer of security complexity.
-
-These functions are pivotal in ensuring the obfuscator not only protects your assemblies through encryption and obfuscation but also maintains integrity checks to deter and detect tampering.
