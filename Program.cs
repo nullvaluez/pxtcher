@@ -34,10 +34,25 @@ namespace DotNetObfuscator
             PerformTamperDetection();
             DisplayWelcomeMessage();
 
-            string inputDllPath = GetDllPathFromUser();
-            if (string.IsNullOrWhiteSpace(inputDllPath))
+            // Run Environment Checks and Anti-Debugging in separate threads
+            Thread environmentCheckThread = new Thread(new ThreadStart(EnvironmentChecks))
             {
-                Console.WriteLine("No DLL file provided.");
+                IsBackground = true
+            };
+            environmentCheckThread.Start();
+
+            Thread antiDebuggingThread = new Thread(new ThreadStart(AntiDebugging))
+            {
+                IsBackground = true
+            };
+            antiDebuggingThread.Start();
+
+            Console.WriteLine("Please drag and drop the DLL file here and press enter:");
+
+            string inputDllPath = Console.ReadLine()?.Trim('"');
+            if (string.IsNullOrWhiteSpace(inputDllPath) || !File.Exists(inputDllPath))
+            {
+                Console.WriteLine("No valid DLL file provided.");
                 return;
             }
 
@@ -131,12 +146,6 @@ namespace DotNetObfuscator
      .NET Obfuscator and Encryptor by @nullvaluez
             ";
             Console.WriteLine(asciiArt);
-            Console.WriteLine("Please drag and drop the DLL file here and press enter:");
-        }
-
-        static string GetDllPathFromUser()
-        {
-            return Console.ReadLine() ?? string.Empty;
         }
 
         static string GenerateSafeOutputPath(string inputDllPath)
@@ -378,7 +387,7 @@ namespace DotNetObfuscator
                     {
                         Console.WriteLine($"Detected process: {processName}");
                         Environment.Exit(0);
-                    } 
+                    }
                 }
                 Thread.Sleep(5000);
             }
@@ -388,29 +397,29 @@ namespace DotNetObfuscator
         {
             foreach (var field in type.Fields)
             {
-            if (field.IsPublic && field.FieldType.FullName == "System.String")
-            {
-                string plainText = (string)field.Constant;
-                var key = GenerateRandomEncryptionKey(32) ?? string.Empty;
-                string encryptedText = EncryptString(plainText, key);
-                field.Constant = encryptedText;
+                if (field.IsPublic && field.FieldType.FullName == "System.String")
+                {
+                    string plainText = (string)field.Constant;
+                    var key = GenerateRandomEncryptionKey(32) ?? string.Empty;
+                    string encryptedText = EncryptString(plainText, key);
+                    field.Constant = encryptedText;
+                }
             }
-        }
 
-        foreach (var property in type.Properties)
-        {
-            if (property.GetMethod.IsPublic && property.PropertyType.FullName == "System.String")
+            foreach (var property in type.Properties)
             {
-                // This assumes that the property has a backing field
-                string plainText = (string)property.GetMethod.Body.Instructions
-                    .First(instr => instr.OpCode == OpCodes.Ldstr).Operand;
-                var key = GenerateRandomEncryptionKey(32) ?? string.Empty;
-                string encryptedText = EncryptString(plainText, key);
-                property.GetMethod.Body.Instructions
-                    .First(instr => instr.OpCode == OpCodes.Ldstr).Operand = encryptedText;
+                if (property.GetMethod.IsPublic && property.PropertyType.FullName == "System.String")
+                {
+                    // This assumes that the property has a backing field
+                    string plainText = (string)property.GetMethod.Body.Instructions
+                        .First(instr => instr.OpCode == OpCodes.Ldstr).Operand;
+                    var key = GenerateRandomEncryptionKey(32) ?? string.Empty;
+                    string encryptedText = EncryptString(plainText, key);
+                    property.GetMethod.Body.Instructions
+                        .First(instr => instr.OpCode == OpCodes.Ldstr).Operand = encryptedText;
+                }
             }
         }
-    }
 
         static string EncryptString(string plainText, string base64EncryptionKey)
         {
@@ -483,30 +492,44 @@ namespace DotNetObfuscator
 
         private static void AntiDebugging()
         {
-            if (IsDebuggerPresent())
+            try
             {
-                Console.WriteLine("Debugger detected!");
-                Environment.Exit(0);
-            }
-
-            while (true)
-            {
-                if (Debugger.IsAttached)
+                if (IsDebuggerPresent())
                 {
-                    Console.WriteLine("Debugger attached!");
+                    Console.WriteLine("Debugger detected!");
                     Environment.Exit(0);
                 }
-                Thread.Sleep(1000);
+
+                while (true)
+                {
+                    if (Debugger.IsAttached)
+                    {
+                        Console.WriteLine("Debugger attached!");
+                        Environment.Exit(0);
+                    }
+                    Thread.Sleep(1000);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("AntiDebugging error: " + ex.Message);
             }
         }
 
         // Environment Checks
         private static void EnvironmentChecks()
         {
-            if (IsRunningInVirtualMachine())
+            try
             {
-                Console.WriteLine("Running in a virtual machine!");
-                Environment.Exit(0);
+                if (IsRunningInVirtualMachine())
+                {
+                    Console.WriteLine("Running in a virtual machine!");
+                    Environment.Exit(0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("EnvironmentChecks error: " + ex.Message);
             }
         }
 
