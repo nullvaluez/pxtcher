@@ -33,6 +33,7 @@ namespace DotNetObfuscator
             StartProcessDetection();
             PerformTamperDetection();
             DisplayWelcomeMessage();
+            
 
             // Run Environment Checks and Anti-Debugging in separate threads
             Thread environmentCheckThread = new Thread(new ThreadStart(EnvironmentChecks))
@@ -46,6 +47,11 @@ namespace DotNetObfuscator
                 IsBackground = true
             };
             antiDebuggingThread.Start();
+
+            Thread memoryCheckThread = new Thread(new ThreadStart(MemoryScanning))
+            {
+                IsBackground = true
+            };
 
             Console.WriteLine("Please drag and drop the DLL file here and press enter:");
 
@@ -111,6 +117,7 @@ namespace DotNetObfuscator
                 EmbedHashInAssembly();
                 GetEmbeddedHash();
                 SwitchEncryptionAlgorithm();
+                
 
                 Console.WriteLine($"MD5 hash: {hashString}");
                 Console.WriteLine("Tamper detection added.");
@@ -151,7 +158,7 @@ namespace DotNetObfuscator
         static string GenerateSafeOutputPath(string inputDllPath)
         {
             string directory = Path.GetDirectoryName(inputDllPath) ?? string.Empty;
-            string fileName = Path.GetFileNameWithoutExtension(inputDllPath) + "_obfuscated.dll";
+            string fileName = Path.GetFileNameWithoutExtension(inputDllPath) + "_new.dll";
             return Path.Combine(directory, fileName);
         }
 
@@ -268,6 +275,7 @@ namespace DotNetObfuscator
                         InsertOpaquePredicates(method);
                         AddAntiTamperCheck(method);
                         EncryptStrings(type);
+                       
                     }
                 }
             }
@@ -531,6 +539,37 @@ namespace DotNetObfuscator
             {
                 Console.WriteLine("EnvironmentChecks error: " + ex.Message);
             }
+        }
+
+        // Memory Scanning
+        static void MemoryScanning()
+        {
+            while (true)
+            {
+                var suspiciousPatterns = new List<byte[]> 
+                {
+                    new byte[] { 0x90, 0x90, 0x90 }, // NOP sleds, commonly found in shellcode
+                    new byte[] { 0xCC, 0xCC, 0xCC }  // INT3 instructions, used by debuggers
+                };
+
+                foreach (var pattern in suspiciousPatterns)
+                {
+                    if (ScanMemory(pattern))
+                    {
+                        Console.WriteLine("Suspicious memory pattern detected!");
+                        Environment.Exit(0);
+                    }
+                }
+
+                Thread.Sleep(5000);
+            }
+        }
+
+        static bool ScanMemory(byte[] pattern)
+        {
+            // Implementation of memory scanning based on pattern
+            // This is platform-specific and requires advanced knowledge of memory management
+            return false;
         }
 
         private static bool IsRunningInVirtualMachine()
